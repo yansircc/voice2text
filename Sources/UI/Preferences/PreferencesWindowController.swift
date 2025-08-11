@@ -329,7 +329,3 @@ extension PreferencesWindowController: NSTextViewDelegate {
         // Handle text changes if needed
     }
 }
-
-extension Notification.Name {
-    static let preferencesDidChange = Notification.Name("PreferencesDidChange")
-}

@@ -1,5 +1,6 @@
 import Foundation
 
+// Keep the legacy delegate for backward compatibility
 protocol WhisperServiceDelegate: AnyObject {
     func whisperService(_ service: WhisperService, didReceivePartialTranscription text: String)
     func whisperService(_ service: WhisperService, didCompleteTranscription text: String)
@@ -212,26 +213,6 @@ class WhisperService: NSObject {
     }
 }
 
-enum WhisperError: LocalizedError {
-    case invalidURL
-    case invalidResponse
-    case apiError(statusCode: Int, message: String)
-    case audioConversionFailed
-    
-    var errorDescription: String? {
-        switch self {
-        case .invalidURL:
-            return "Invalid API URL"
-        case .invalidResponse:
-            return "Invalid response from server"
-        case .apiError(let statusCode, let message):
-            return "API Error (\(statusCode)): \(message)"
-        case .audioConversionFailed:
-            return "Failed to convert audio to required format"
-        }
-    }
-}
-
 // MARK: - URLSessionDataDelegate for streaming
 extension WhisperService: URLSessionDataDelegate {
     
@@ -391,3 +372,6 @@ extension WhisperService: URLSessionDataDelegate {
         fullTranscription = ""
     }
 }
+
+// Note: WhisperService already implements the required methods
+// Protocol conformance is done separately to maintain backward compatibility
