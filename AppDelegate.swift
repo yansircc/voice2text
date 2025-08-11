@@ -246,11 +246,12 @@ extension AppDelegate: AudioEngineDelegate {
                 let transcription = try await whisperService?.transcribe(audioData: audioData) ?? ""
                 
                 await MainActor.run {
-                    // Remove placeholder and insert actual text
+                    // Remove placeholder
                     removePlaceholderText()
                     
                     if !transcription.isEmpty {
-                        insertTextAtCursor(transcription)
+                        // Simulate streaming output by inserting text in chunks
+                        insertTextStreaming(transcription)
                         updateStatus("Transcribed: \(transcription.prefix(30))...")
                     } else {
                         updateStatus("No speech detected")
@@ -288,23 +289,56 @@ extension AppDelegate: AudioEngineDelegate {
     
     @MainActor
     private func removePlaceholderText() {
-        // Select and delete the placeholder text
+        // Delete exactly the number of characters we inserted
+        let placeholderLength = "转录中...".count
         let source = CGEventSource(stateID: .combinedSessionState)
         
-        // Select all (Cmd+A)
-        let aKey: CGKeyCode = 0x00
-        if let selectAll = CGEvent(keyboardEventSource: source, virtualKey: aKey, keyDown: true) {
-            selectAll.flags = .maskCommand
-            selectAll.post(tap: .cgAnnotatedSessionEventTap)
+        // Use backspace to delete the placeholder text
+        let deleteKey: CGKeyCode = 0x33 // Delete/Backspace key
+        
+        for _ in 0..<placeholderLength {
+            if let deleteEvent = CGEvent(keyboardEventSource: source, virtualKey: deleteKey, keyDown: true) {
+                deleteEvent.post(tap: .cgAnnotatedSessionEventTap)
+            }
+            if let deleteEventUp = CGEvent(keyboardEventSource: source, virtualKey: deleteKey, keyDown: false) {
+                deleteEventUp.post(tap: .cgAnnotatedSessionEventTap)
+            }
+            // Small delay between deletions
+            Thread.sleep(forTimeInterval: 0.01)
         }
+    }
+    
+    @MainActor
+    private func insertTextStreaming(_ text: String) {
+        // Simulate streaming by inserting text in chunks
+        let source = CGEventSource(stateID: .combinedSessionState)
+        let words = text.split(separator: " ").map { String($0) }
         
-        // Small delay to ensure selection
-        Thread.sleep(forTimeInterval: 0.05)
+        // Use a class to hold mutable state for the timer
+        class StreamingState {
+            var currentIndex = 0
+        }
+        let state = StreamingState()
         
-        // Delete selected text
-        let deleteKey: CGKeyCode = 0x33
-        if let deleteEvent = CGEvent(keyboardEventSource: source, virtualKey: deleteKey, keyDown: true) {
-            deleteEvent.post(tap: .cgAnnotatedSessionEventTap)
+        // Insert words progressively with small delays
+        Timer.scheduledTimer(withTimeInterval: 0.05, repeats: true) { timer in
+            if state.currentIndex < words.count {
+                let word = words[state.currentIndex]
+                let textToInsert = state.currentIndex == 0 ? word : " " + word
+                
+                // Insert each word
+                for character in textToInsert {
+                    if let event = CGEvent(keyboardEventSource: source, virtualKey: 0, keyDown: true) {
+                        let utf16Chars = Array(String(character).utf16)
+                        event.keyboardSetUnicodeString(stringLength: utf16Chars.count, unicodeString: utf16Chars)
+                        event.post(tap: .cgAnnotatedSessionEventTap)
+                    }
+                }
+                
+                state.currentIndex += 1
+            } else {
+                timer.invalidate()
+            }
         }
     }
     

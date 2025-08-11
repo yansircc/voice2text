@@ -21,22 +21,8 @@ class AudioEngine {
     }
     
     private func setupAudioEngine() {
-        audioEngine.attach(mixerNode)
-        
-        let inputNode = audioEngine.inputNode
-        let inputFormat = inputNode.outputFormat(forBus: 0)
-        
-        audioEngine.connect(inputNode, to: mixerNode, format: inputFormat)
-        
-        let mainMixerNode = audioEngine.mainMixerNode
-        let mixerFormat = AVAudioFormat(
-            commonFormat: .pcmFormatFloat32,
-            sampleRate: inputFormat.sampleRate,
-            channels: 1,
-            interleaved: false
-        )
-        
-        audioEngine.connect(mixerNode, to: mainMixerNode, format: mixerFormat)
+        // Note: We don't connect to mainMixerNode to avoid audio feedback/echo
+        // We only need to capture the input, not play it back
     }
     
     func startRecording() throws {
