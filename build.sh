@@ -23,6 +23,8 @@ swiftc \
     AudioEngine.swift \
     WhisperService.swift \
     WhisperConfiguration.swift \
+    EditableTextField.swift \
+    PreferencesWindowController.swift \
     DotEnv.swift \
     AudioUtilities.swift \
     -o "$MACOS_DIR/$APP_NAME" \

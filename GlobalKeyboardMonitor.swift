@@ -13,7 +13,6 @@ class GlobalKeyboardMonitor {
     
     // Key codes
     private let kFnKeyCode: CGKeyCode = 0x3F  // Fn key
-    private let kF5KeyCode: CGKeyCode = 0x60  // F5 key
     
     func start() {
         monitoringQueue.async { [weak self] in
@@ -28,8 +27,8 @@ class GlobalKeyboardMonitor {
     }
     
     private func setupEventTap() {
-        // Create an event tap to monitor keyboard events
-        let eventMask = (1 << CGEventType.keyDown.rawValue) | (1 << CGEventType.keyUp.rawValue) | (1 << CGEventType.flagsChanged.rawValue)
+        // Create an event tap to monitor keyboard events (only flagsChanged for Fn key)
+        let eventMask = (1 << CGEventType.flagsChanged.rawValue)
         
         // Create the event tap
         guard let eventTap = CGEvent.tapCreate(
@@ -95,42 +94,6 @@ class GlobalKeyboardMonitor {
                 }
             }
             
-        case .keyDown:
-            // Check for F5 key as alternative
-            if event.getIntegerValueField(.keyboardEventKeycode) == kF5KeyCode {
-                // Check if we should intercept F5
-                let flags = event.flags
-                
-                // If no modifiers, intercept F5 for our use
-                if !flags.contains(.maskCommand) && !flags.contains(.maskControl) && !flags.contains(.maskAlternate) {
-                    // Start recording
-                    DispatchQueue.main.async { [weak self] in
-                        guard let self = self else { return }
-                        self.delegate?.keyboardMonitor(self, fnKeyPressed: true)
-                    }
-                    
-                    // Suppress the original F5 event
-                    return nil
-                }
-            }
-            
-        case .keyUp:
-            // Check for F5 key release
-            if event.getIntegerValueField(.keyboardEventKeycode) == kF5KeyCode {
-                let flags = event.flags
-                
-                if !flags.contains(.maskCommand) && !flags.contains(.maskControl) && !flags.contains(.maskAlternate) {
-                    // Stop recording
-                    DispatchQueue.main.async { [weak self] in
-                        guard let self = self else { return }
-                        self.delegate?.keyboardMonitor(self, fnKeyPressed: false)
-                    }
-                    
-                    // Suppress the original F5 event
-                    return nil
-                }
-            }
-            
         case .tapDisabledByTimeout:
             // Re-enable the event tap if it gets disabled by timeout
             if let eventTap = eventTap {
@@ -141,7 +104,7 @@ class GlobalKeyboardMonitor {
             break
         }
         
-        // Return the event unmodified (except when we return nil above)
+        // Return the event unmodified
         return Unmanaged.passUnretained(event)
     }
     

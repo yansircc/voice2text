@@ -41,7 +41,13 @@ class AudioUtilities {
     static func convertPCMBufferToWAV(buffer: AVAudioPCMBuffer, format: AVAudioFormat) -> Data? {
         let audioFile = createTempWAVFile()
         
-        guard let file = try? AVAudioFile(forWriting: audioFile, settings: format.settings) else {
+        // Create settings for 16-bit PCM to reduce file size
+        var settings = format.settings
+        settings[AVLinearPCMBitDepthKey] = 16
+        settings[AVLinearPCMIsFloatKey] = false
+        settings[AVLinearPCMIsBigEndianKey] = false
+        
+        guard let file = try? AVAudioFile(forWriting: audioFile, settings: settings) else {
             return nil
         }
         

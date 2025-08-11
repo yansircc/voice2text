@@ -7,10 +7,16 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     private var audioEngine: AudioEngine?
     private var whisperService: WhisperService?
     private var isRecording = false
+    private var preferencesWindowController: PreferencesWindowController?
+    private var lastInsertedText: String = ""
+    private var undoManager = UndoManager()
     
     func applicationDidFinishLaunching(_ notification: Notification) {
         // Hide dock icon for menu bar app
         NSApp.setActivationPolicy(.accessory)
+        
+        // Setup hidden Edit menu for copy/paste support
+        setupEditMenu()
         
         // Check for required permissions
         checkPermissions()
@@ -23,6 +29,14 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         
         // Start monitoring keyboard
         startKeyboardMonitoring()
+        
+        // Listen for preference changes
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(preferencesDidChange),
+            name: .preferencesDidChange,
+            object: nil
+        )
     }
     
     private func checkPermissions() {
@@ -54,12 +68,36 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         audioEngine?.delegate = self
     }
     
+    private func setupEditMenu() {
+        // Create a hidden Edit menu to enable copy/paste shortcuts
+        let mainMenu = NSMenu()
+        NSApp.mainMenu = mainMenu
+        
+        let editMenuItem = NSMenuItem()
+        editMenuItem.title = "Edit"
+        mainMenu.addItem(editMenuItem)
+        
+        let editMenu = NSMenu(title: "Edit")
+        editMenuItem.submenu = editMenu
+        
+        // Add standard edit menu items
+        editMenu.addItem(withTitle: "Undo", action: #selector(UndoManager.undo), keyEquivalent: "z")
+        editMenu.addItem(withTitle: "Redo", action: #selector(UndoManager.redo), keyEquivalent: "Z")
+        editMenu.addItem(NSMenuItem.separator())
+        editMenu.addItem(withTitle: "Cut", action: #selector(NSText.cut(_:)), keyEquivalent: "x")
+        editMenu.addItem(withTitle: "Copy", action: #selector(NSText.copy(_:)), keyEquivalent: "c")
+        editMenu.addItem(withTitle: "Paste", action: #selector(NSText.paste(_:)), keyEquivalent: "v")
+        editMenu.addItem(withTitle: "Select All", action: #selector(NSText.selectAll(_:)), keyEquivalent: "a")
+        
+        // The menu is hidden but still functional for keyboard shortcuts
+    }
+    
     private func setupStatusBar() {
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
         
         if let button = statusItem?.button {
             button.image = NSImage(systemSymbolName: "mic.fill", accessibilityDescription: "Voice2Text")
-            button.toolTip = "Voice2Text - Hold Fn/F5 to record"
+            button.toolTip = "Voice2Text - Hold Fn to record"
         }
         
         setupMenu()
@@ -71,14 +109,9 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         menu.addItem(NSMenuItem(title: "Voice2Text v1.0", action: nil, keyEquivalent: ""))
         menu.addItem(NSMenuItem.separator())
         
-        let statusMenuItem = NSMenuItem(title: "Status: Ready", action: nil, keyEquivalent: "")
-        statusMenuItem.tag = 1001  // Use tag instead of identifier for simpler access
+        let statusMenuItem = NSMenuItem(title: "Ready", action: nil, keyEquivalent: "")
+        statusMenuItem.tag = 1001
         menu.addItem(statusMenuItem)
-        
-        menu.addItem(NSMenuItem.separator())
-        
-        let hotkeyMenuItem = NSMenuItem(title: "Hotkey: Fn (hold to record)", action: nil, keyEquivalent: "")
-        menu.addItem(hotkeyMenuItem)
         
         menu.addItem(NSMenuItem.separator())
         
@@ -114,8 +147,10 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
     
     @objc private func showPreferences() {
-        // TODO: Implement preferences window
-        print("Preferences window not yet implemented")
+        if preferencesWindowController == nil {
+            preferencesWindowController = PreferencesWindowController()
+        }
+        preferencesWindowController?.showWindow(nil)
     }
     
     @objc private func showAbout() {
@@ -126,11 +161,23 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         alert.runModal()
     }
     
+    @objc private func preferencesDidChange() {
+        // Reload configuration and reinitialize WhisperService
+        let configuration = WhisperConfiguration()
+        whisperService = WhisperService(configuration: configuration)
+        updateStatus("Configuration updated")
+        
+        // Reset to ready after 2 seconds
+        DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
+            self.updateStatus("Ready")
+        }
+    }
+    
     private func updateStatus(_ text: String) {
         DispatchQueue.main.async {
             if let menu = self.statusItem?.menu,
                let statusItem = menu.item(withTag: 1001) {
-                statusItem.title = "Status: \(text)"
+                statusItem.title = text
             }
             
             // Update icon based on status
@@ -188,16 +235,26 @@ extension AppDelegate: AudioEngineDelegate {
             return
         }
         
+        // Immediately insert placeholder text for better UX
+        Task { @MainActor in
+            insertPlaceholderText("转录中...")
+        }
+        
         // Process audio with Whisper
         Task {
             do {
                 let transcription = try await whisperService?.transcribe(audioData: audioData) ?? ""
                 
-                if !transcription.isEmpty {
-                    await insertTextAtCursor(transcription)
-                    updateStatus("Transcribed: \(transcription.prefix(30))...")
-                } else {
-                    updateStatus("No speech detected")
+                await MainActor.run {
+                    // Remove placeholder and insert actual text
+                    removePlaceholderText()
+                    
+                    if !transcription.isEmpty {
+                        insertTextAtCursor(transcription)
+                        updateStatus("Transcribed: \(transcription.prefix(30))...")
+                    } else {
+                        updateStatus("No speech detected")
+                    }
                 }
                 
                 // Reset to ready after 2 seconds
@@ -205,32 +262,85 @@ extension AppDelegate: AudioEngineDelegate {
                     self.updateStatus("Ready")
                 }
             } catch {
-                print("Transcription error: \(error)")
-                updateStatus("Error: \(error.localizedDescription)")
+                await MainActor.run {
+                    // Remove placeholder on error
+                    removePlaceholderText()
+                    print("Transcription error: \(error)")
+                    updateStatus("Error: \(error.localizedDescription)")
+                }
             }
         }
     }
     
     @MainActor
-    private func insertTextAtCursor(_ text: String) {
-        // Method 1: Simulate typing
+    private func insertPlaceholderText(_ placeholder: String) {
+        // Insert placeholder text at cursor
         let source = CGEventSource(stateID: .combinedSessionState)
         
-        for character in text {
+        for character in placeholder {
             if let event = CGEvent(keyboardEventSource: source, virtualKey: 0, keyDown: true) {
                 let utf16Chars = Array(String(character).utf16)
                 event.keyboardSetUnicodeString(stringLength: utf16Chars.count, unicodeString: utf16Chars)
                 event.post(tap: .cgAnnotatedSessionEventTap)
             }
         }
+    }
+    
+    @MainActor
+    private func removePlaceholderText() {
+        // Select and delete the placeholder text
+        let source = CGEventSource(stateID: .combinedSessionState)
         
-        // Alternative Method 2: Use pasteboard
-        // NSPasteboard.general.clearContents()
-        // NSPasteboard.general.setString(text, forType: .string)
-        // // Simulate Cmd+V
-        // let vKey: CGKeyCode = 0x09
-        // let cmdDown = CGEvent(keyboardEventSource: source, virtualKey: vKey, keyDown: true)
-        // cmdDown?.flags = .maskCommand
-        // cmdDown?.post(tap: .cgAnnotatedSessionEventTap)
+        // Select all (Cmd+A)
+        let aKey: CGKeyCode = 0x00
+        if let selectAll = CGEvent(keyboardEventSource: source, virtualKey: aKey, keyDown: true) {
+            selectAll.flags = .maskCommand
+            selectAll.post(tap: .cgAnnotatedSessionEventTap)
+        }
+        
+        // Small delay to ensure selection
+        Thread.sleep(forTimeInterval: 0.05)
+        
+        // Delete selected text
+        let deleteKey: CGKeyCode = 0x33
+        if let deleteEvent = CGEvent(keyboardEventSource: source, virtualKey: deleteKey, keyDown: true) {
+            deleteEvent.post(tap: .cgAnnotatedSessionEventTap)
+        }
+    }
+    
+    @MainActor
+    private func insertTextAtCursor(_ text: String) {
+        // Store for undo support
+        lastInsertedText = text
+        
+        // Use pasteboard method for better undo support
+        let source = CGEventSource(stateID: .combinedSessionState)
+        
+        // Save current pasteboard content
+        let previousContent = NSPasteboard.general.string(forType: .string)
+        
+        // Set new content
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(text, forType: .string)
+        
+        // Simulate Cmd+V
+        let vKey: CGKeyCode = 0x09
+        if let pasteEvent = CGEvent(keyboardEventSource: source, virtualKey: vKey, keyDown: true) {
+            pasteEvent.flags = .maskCommand
+            pasteEvent.post(tap: .cgAnnotatedSessionEventTap)
+        }
+        
+        if let pasteEventUp = CGEvent(keyboardEventSource: source, virtualKey: vKey, keyDown: false) {
+            pasteEventUp.flags = .maskCommand
+            pasteEventUp.post(tap: .cgAnnotatedSessionEventTap)
+        }
+        
+        // Restore previous pasteboard content after a delay
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+            if let previousContent = previousContent {
+                NSPasteboard.general.clearContents()
+                NSPasteboard.general.setString(previousContent, forType: .string)
+            }
+        }
     }
 }

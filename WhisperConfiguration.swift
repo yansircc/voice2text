@@ -9,12 +9,38 @@ struct WhisperConfiguration {
     let prompt: String?
     
     init() {
-        self.baseURL = ProcessInfo.processInfo.environment["WHISPER_BASE_URL"] ?? "https://api.openai.com"
-        self.apiKey = ProcessInfo.processInfo.environment["WHISPER_API_KEY"] ?? ""
-        self.modelId = ProcessInfo.processInfo.environment["WHISPER_MODEL_ID"] ?? "whisper-large-v3"
-        self.language = ProcessInfo.processInfo.environment["WHISPER_LANGUAGE"] ?? "zh"
-        self.temperature = Double(ProcessInfo.processInfo.environment["WHISPER_TEMPERATURE"] ?? "") ?? 0.2
-        self.prompt = ProcessInfo.processInfo.environment["WHISPER_PROMPT"]
+        let userDefaults = UserDefaults.standard
+        
+        // Try UserDefaults first, then environment variables, then defaults
+        self.baseURL = userDefaults.string(forKey: "whisper_base_url")
+            ?? ProcessInfo.processInfo.environment["WHISPER_BASE_URL"] 
+            ?? "https://api.openai.com"
+            
+        self.apiKey = userDefaults.string(forKey: "whisper_api_key")
+            ?? ProcessInfo.processInfo.environment["WHISPER_API_KEY"] 
+            ?? ""
+            
+        self.modelId = userDefaults.string(forKey: "whisper_model")
+            ?? ProcessInfo.processInfo.environment["WHISPER_MODEL_ID"] 
+            ?? "whisper-large-v3"
+            
+        let envLanguage = ProcessInfo.processInfo.environment["WHISPER_LANGUAGE"] ?? "zh"
+        let userLanguage = userDefaults.string(forKey: "whisper_language") ?? envLanguage
+        self.language = userLanguage.isEmpty ? nil : userLanguage
+        
+        // Handle temperature with fallback logic
+        if userDefaults.bool(forKey: "whisper_temperature_set") {
+            self.temperature = userDefaults.double(forKey: "whisper_temperature")
+        } else if let envTempString = ProcessInfo.processInfo.environment["WHISPER_TEMPERATURE"],
+                  let envTemp = Double(envTempString) {
+            self.temperature = envTemp
+        } else {
+            self.temperature = 0.2
+        }
+        
+        let envPrompt = ProcessInfo.processInfo.environment["WHISPER_PROMPT"]
+        let userPrompt = userDefaults.string(forKey: "whisper_prompt") ?? envPrompt ?? ""
+        self.prompt = userPrompt.isEmpty ? nil : userPrompt
     }
     
     var transcriptionEndpoint: String {

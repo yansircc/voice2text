@@ -1,14 +1,26 @@
 import Foundation
 
-class WhisperService {
+protocol WhisperServiceDelegate: AnyObject {
+    func whisperService(_ service: WhisperService, didReceivePartialTranscription text: String)
+    func whisperService(_ service: WhisperService, didCompleteTranscription text: String)
+    func whisperService(_ service: WhisperService, didFailWithError error: Error)
+}
+
+class WhisperService: NSObject {
     private let configuration: WhisperConfiguration
     private let session: URLSession
+    weak var delegate: WhisperServiceDelegate?
+    private var streamBuffer = ""
     
     init(configuration: WhisperConfiguration) {
         self.configuration = configuration
-        self.session = URLSession.shared
+        let config = URLSessionConfiguration.default
+        config.timeoutIntervalForRequest = 60
+        self.session = URLSession(configuration: config)
+        super.init()
     }
     
+    // Original non-streaming method (kept for compatibility)
     func transcribe(audioData: Data, filename: String = "audio.wav") async throws -> String {
         try configuration.validate()
         
@@ -89,6 +101,112 @@ class WhisperService {
         body.append("--\(boundary)\r\n".data(using: .utf8)!)
         body.append("Content-Disposition: form-data; name=\"response_format\"\r\n\r\n".data(using: .utf8)!)
         body.append("json\r\n".data(using: .utf8)!)
+        
+        // End boundary
+        body.append("--\(boundary)--\r\n".data(using: .utf8)!)
+        
+        return body
+    }
+    
+    // Streaming transcription method
+    func transcribeStreaming(audioData: Data, filename: String = "audio.wav") async {
+        streamBuffer = ""
+        
+        do {
+            try configuration.validate()
+            
+            guard let url = URL(string: configuration.transcriptionEndpoint) else {
+                throw WhisperError.invalidURL
+            }
+            
+            var request = URLRequest(url: url)
+            request.httpMethod = "POST"
+            request.setValue("Bearer \(configuration.apiKey)", forHTTPHeaderField: "Authorization")
+            
+            let boundary = UUID().uuidString
+            request.setValue("multipart/form-data; boundary=\(boundary)", forHTTPHeaderField: "Content-Type")
+            
+            let httpBody = createStreamingMultipartBody(
+                audioData: audioData,
+                filename: filename,
+                boundary: boundary
+            )
+            
+            request.httpBody = httpBody
+            
+            // For now, we'll use regular transcription since streaming requires specific API support
+            // In production, this would use URLSession delegate methods for streaming
+            let (data, response) = try await session.data(for: request)
+            
+            guard let httpResponse = response as? HTTPURLResponse else {
+                throw WhisperError.invalidResponse
+            }
+            
+            if httpResponse.statusCode != 200 {
+                let errorMessage = String(data: data, encoding: .utf8) ?? "Unknown error"
+                throw WhisperError.apiError(statusCode: httpResponse.statusCode, message: errorMessage)
+            }
+            
+            // Parse response
+            if let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+               let text = json["text"] as? String {
+                await MainActor.run {
+                    self.delegate?.whisperService(self, didCompleteTranscription: text)
+                }
+            } else {
+                throw WhisperError.invalidResponse
+            }
+            
+        } catch {
+            await MainActor.run {
+                self.delegate?.whisperService(self, didFailWithError: error)
+            }
+        }
+    }
+    
+    private func createStreamingMultipartBody(audioData: Data, filename: String, boundary: String) -> Data {
+        var body = Data()
+        
+        // File data
+        body.append("--\(boundary)\r\n".data(using: .utf8)!)
+        body.append("Content-Disposition: form-data; name=\"file\"; filename=\"\(filename)\"\r\n".data(using: .utf8)!)
+        body.append("Content-Type: audio/wav\r\n\r\n".data(using: .utf8)!)
+        body.append(audioData)
+        body.append("\r\n".data(using: .utf8)!)
+        
+        // Model
+        body.append("--\(boundary)\r\n".data(using: .utf8)!)
+        body.append("Content-Disposition: form-data; name=\"model\"\r\n\r\n".data(using: .utf8)!)
+        body.append("\(configuration.modelId)\r\n".data(using: .utf8)!)
+        
+        // Language
+        if let language = configuration.language {
+            body.append("--\(boundary)\r\n".data(using: .utf8)!)
+            body.append("Content-Disposition: form-data; name=\"language\"\r\n\r\n".data(using: .utf8)!)
+            body.append("\(language)\r\n".data(using: .utf8)!)
+        }
+        
+        // Prompt
+        if let prompt = configuration.prompt, !prompt.isEmpty {
+            body.append("--\(boundary)\r\n".data(using: .utf8)!)
+            body.append("Content-Disposition: form-data; name=\"prompt\"\r\n\r\n".data(using: .utf8)!)
+            body.append("\(prompt)\r\n".data(using: .utf8)!)
+        }
+        
+        // Temperature
+        body.append("--\(boundary)\r\n".data(using: .utf8)!)
+        body.append("Content-Disposition: form-data; name=\"temperature\"\r\n\r\n".data(using: .utf8)!)
+        body.append("\(configuration.temperature)\r\n".data(using: .utf8)!)
+        
+        // Response format
+        body.append("--\(boundary)\r\n".data(using: .utf8)!)
+        body.append("Content-Disposition: form-data; name=\"response_format\"\r\n\r\n".data(using: .utf8)!)
+        body.append("text\r\n".data(using: .utf8)!)
+        
+        // Stream parameter (if supported by the API)
+        body.append("--\(boundary)\r\n".data(using: .utf8)!)
+        body.append("Content-Disposition: form-data; name=\"stream\"\r\n\r\n".data(using: .utf8)!)
+        body.append("true\r\n".data(using: .utf8)!)
         
         // End boundary
         body.append("--\(boundary)--\r\n".data(using: .utf8)!)

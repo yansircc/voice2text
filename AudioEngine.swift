@@ -85,7 +85,16 @@ class AudioEngine {
             }
         }
         
-        return AudioUtilities.createWAVData(from: downsampledBuffers, format: targetFormat)
+        let audioData = AudioUtilities.createWAVData(from: downsampledBuffers, format: targetFormat)
+        
+        // Log file size for debugging
+        if let data = audioData {
+            let sizeInKB = Double(data.count) / 1024.0
+            let sizeInMB = sizeInKB / 1024.0
+            print("Audio file size: \(String(format: "%.2f", sizeInKB)) KB (\(String(format: "%.2f", sizeInMB)) MB)")
+        }
+        
+        return audioData
     }
     
     private func processAudioBuffer(_ buffer: AVAudioPCMBuffer) {
