@@ -1,0 +1,24 @@
+# Environment variables
+.env
+.env.local
+.env.*.local
+
+# Build artifacts
+audio_recorder
+*.o
+*.swiftmodule
+*.swiftdoc
+*.d
+
+# macOS
+.DS_Store
+
+# IDE
+.vscode/
+.idea/
+*.xcodeproj/
+*.xcworkspace/
+
+# Temporary files
+*.tmp
+temp_*.wav
