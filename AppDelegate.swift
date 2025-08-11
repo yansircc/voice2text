@@ -10,6 +10,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     private var preferencesWindowController: PreferencesWindowController?
     private var lastInsertedText: String = ""
     private var undoManager = UndoManager()
+    private var placeholderRemoved = false
     
     func applicationDidFinishLaunching(_ notification: Notification) {
         // Hide dock icon for menu bar app
@@ -201,6 +202,65 @@ extension AppDelegate: GlobalKeyboardMonitorDelegate {
     }
 }
 
+// MARK: - WhisperServiceDelegate
+extension AppDelegate: WhisperServiceDelegate {
+    func whisperService(_ service: WhisperService, didReceivePartialTranscription text: String) {
+        // print("DEBUG AppDelegate: Received partial transcription: \(text)")
+        // Remove placeholder on first chunk only
+        DispatchQueue.main.async {
+            if !self.placeholderRemoved && !text.isEmpty {
+                // print("DEBUG AppDelegate: Removing placeholder")
+                self.placeholderRemoved = true
+                self.removePlaceholderText()
+            }
+            
+            // Insert the partial transcription immediately
+            // print("DEBUG AppDelegate: Inserting text: \(text)")
+            self.insertTextAtCursor(text)
+        }
+    }
+    
+    func whisperService(_ service: WhisperService, didCompleteTranscription text: String) {
+        print("DEBUG AppDelegate: Transcription completed: \(text)")
+        DispatchQueue.main.async {
+            // If we haven't removed placeholder yet, do it now
+            if !self.placeholderRemoved {
+                self.placeholderRemoved = true
+                self.removePlaceholderText()
+            }
+            
+            // Insert text directly without streaming effect
+            if !text.isEmpty {
+                self.insertTextAtCursor(text)
+            }
+            
+            self.updateStatus("Transcription completed")
+            
+            // Reset to ready after 2 seconds
+            DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
+                self.updateStatus("Ready")
+            }
+        }
+    }
+    
+    func whisperService(_ service: WhisperService, didFailWithError error: Error) {
+        print("DEBUG AppDelegate: Transcription failed: \(error)")
+        DispatchQueue.main.async {
+            // Remove placeholder on error
+            if !self.placeholderRemoved {
+                self.placeholderRemoved = true
+                self.removePlaceholderText()
+            }
+            self.updateStatus("Error: \(error.localizedDescription)")
+            
+            // Reset to ready after 3 seconds
+            DispatchQueue.main.asyncAfter(deadline: .now() + 3) {
+                self.updateStatus("Ready")
+            }
+        }
+    }
+}
+
 // MARK: - AudioEngineDelegate
 extension AppDelegate: AudioEngineDelegate {
     func audioEngine(_ engine: AudioEngine, didCaptureBuffer buffer: AVAudioPCMBuffer) {
@@ -223,6 +283,10 @@ extension AppDelegate: AudioEngineDelegate {
     private func startRecording() {
         do {
             try audioEngine?.startRecording()
+            // Insert recording indicator text
+            DispatchQueue.main.async {
+                self.insertPlaceholderText("[正在录音...]")
+            }
         } catch {
             print("Failed to start recording: \(error)")
             updateStatus("Error: \(error.localizedDescription)")
@@ -235,42 +299,22 @@ extension AppDelegate: AudioEngineDelegate {
             return
         }
         
-        // Immediately insert placeholder text for better UX
-        Task { @MainActor in
-            insertPlaceholderText("转录中...")
+        // First remove the recording indicator
+        DispatchQueue.main.async {
+            self.removePlaceholderText("[正在录音...]")
+            
+            // Then insert the processing indicator
+            self.insertPlaceholderText("[转录中...]")
         }
         
-        // Process audio with Whisper
-        Task {
-            do {
-                let transcription = try await whisperService?.transcribe(audioData: audioData) ?? ""
-                
-                await MainActor.run {
-                    // Remove placeholder
-                    removePlaceholderText()
-                    
-                    if !transcription.isEmpty {
-                        // Simulate streaming output by inserting text in chunks
-                        insertTextStreaming(transcription)
-                        updateStatus("Transcribed: \(transcription.prefix(30))...")
-                    } else {
-                        updateStatus("No speech detected")
-                    }
-                }
-                
-                // Reset to ready after 2 seconds
-                DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
-                    self.updateStatus("Ready")
-                }
-            } catch {
-                await MainActor.run {
-                    // Remove placeholder on error
-                    removePlaceholderText()
-                    print("Transcription error: \(error)")
-                    updateStatus("Error: \(error.localizedDescription)")
-                }
-            }
-        }
+        // Reset placeholder flag
+        placeholderRemoved = false
+        
+        // Set self as delegate to receive streaming updates
+        whisperService?.delegate = self
+        
+        // Use streaming transcription
+        whisperService?.transcribeStreaming(audioData: audioData)
     }
     
     @MainActor
@@ -288,9 +332,9 @@ extension AppDelegate: AudioEngineDelegate {
     }
     
     @MainActor
-    private func removePlaceholderText() {
+    private func removePlaceholderText(_ text: String = "[转录中...]") {
         // Delete exactly the number of characters we inserted
-        let placeholderLength = "转录中...".count
+        let placeholderLength = text.count
         let source = CGEventSource(stateID: .combinedSessionState)
         
         // Use backspace to delete the placeholder text
@@ -305,40 +349,6 @@ extension AppDelegate: AudioEngineDelegate {
             }
             // Small delay between deletions
             Thread.sleep(forTimeInterval: 0.01)
-        }
-    }
-    
-    @MainActor
-    private func insertTextStreaming(_ text: String) {
-        // Simulate streaming by inserting text in chunks
-        let source = CGEventSource(stateID: .combinedSessionState)
-        let words = text.split(separator: " ").map { String($0) }
-        
-        // Use a class to hold mutable state for the timer
-        class StreamingState {
-            var currentIndex = 0
-        }
-        let state = StreamingState()
-        
-        // Insert words progressively with small delays
-        Timer.scheduledTimer(withTimeInterval: 0.05, repeats: true) { timer in
-            if state.currentIndex < words.count {
-                let word = words[state.currentIndex]
-                let textToInsert = state.currentIndex == 0 ? word : " " + word
-                
-                // Insert each word
-                for character in textToInsert {
-                    if let event = CGEvent(keyboardEventSource: source, virtualKey: 0, keyDown: true) {
-                        let utf16Chars = Array(String(character).utf16)
-                        event.keyboardSetUnicodeString(stringLength: utf16Chars.count, unicodeString: utf16Chars)
-                        event.post(tap: .cgAnnotatedSessionEventTap)
-                    }
-                }
-                
-                state.currentIndex += 1
-            } else {
-                timer.invalidate()
-            }
         }
     }
     
