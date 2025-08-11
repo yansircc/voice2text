@@ -9,11 +9,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     private var isRecording = false
     
     func applicationDidFinishLaunching(_ notification: Notification) {
-        print("🚀 Voice2Text starting...")
-        
         // Hide dock icon for menu bar app
         NSApp.setActivationPolicy(.accessory)
-        print("✅ Set as menu bar app")
         
         // Check for required permissions
         checkPermissions()
@@ -23,12 +20,9 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         
         // Setup status bar
         setupStatusBar()
-        print("✅ Status bar setup complete")
         
         // Start monitoring keyboard
         startKeyboardMonitoring()
-        print("✅ Keyboard monitoring started")
-        print("📱 App is ready! Look for the microphone icon in your menu bar")
     }
     
     private func checkPermissions() {
@@ -52,38 +46,20 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     
     private func setupServices() {
         // Load configuration
-        print("📂 Loading configuration...")
         DotEnv.load(from: "../.env")
         
         let configuration = WhisperConfiguration()
-        print("🔑 API Key: \(configuration.apiKey.isEmpty ? "❌ NOT SET" : "✅ SET")")
-        print("🌐 Base URL: \(configuration.baseURL)")
-        print("🤖 Model: \(configuration.modelId)")
-        
         whisperService = WhisperService(configuration: configuration)
         audioEngine = AudioEngine()
         audioEngine?.delegate = self
-        print("✅ Services initialized")
     }
     
     private func setupStatusBar() {
-        print("📍 Setting up status bar...")
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
         
-        if statusItem == nil {
-            print("❌ Could not create status item")
-            return
-        } else {
-            print("✅ Status item created successfully")
-        }
-        
         if let button = statusItem?.button {
-            // Try text first instead of SF Symbol
-            button.title = "V2T"
-            button.toolTip = "Voice2Text - Press Fn to record"
-            print("✅ Status bar button configured with text 'V2T'")
-        } else {
-            print("❌ Could not get status item button")
+            button.image = NSImage(systemSymbolName: "mic.fill", accessibilityDescription: "Voice2Text")
+            button.toolTip = "Voice2Text - Hold Fn/F5 to record"
         }
         
         setupMenu()

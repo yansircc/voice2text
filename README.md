@@ -6,36 +6,32 @@
 
 - 🎤 **全局热键录音**：按住 Fn 键或 F5 开始录音，松开自动转录
 - 📝 **自动文本插入**：转录结果自动输入到当前光标位置
-- 🔄 **后台运行**：作为菜单栏应用常驻后台
+- 🔄 **后台运行**：作为菜单栏应用常驻后台，不显示 Dock 图标
 - 🚀 **快速响应**：使用 Whisper API 实时转录
 - 🎯 **中文优化**：针对中文语音识别优化配置
+- 🌐 **API 兼容**：支持 OpenAI、Azure、第三方兼容服务
 
-## 📦 安装
+## 📦 快速安装
 
-### 1. 配置 API
-
-确保父目录中有 `.env` 文件：
+### 一键安装（推荐）
 
 ```bash
-cd /Users/yansir/code/zig/audio2text
+# 1. 配置 API（首次使用）
 cp .env.example .env
-# 编辑 .env 文件，填入你的 API key
+# 编辑 .env 文件，填入你的 WHISPER_API_KEY
+
+# 2. 安装
+./install.sh
 ```
 
-### 2. 构建应用
+### 手动安装
 
 ```bash
-cd v1
+# 1. 构建
 ./build.sh
-```
 
-### 3. 安装到系统
-
-```bash
-# 复制到应用程序文件夹
+# 2. 安装到系统
 cp -r build/Voice2Text.app /Applications/
-
-# 从应用程序文件夹打开
 open /Applications/Voice2Text.app
 ```
 

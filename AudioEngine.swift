@@ -66,7 +66,7 @@ class AudioEngine {
         delegate?.audioEngineDidStopRecording(self)
         
         // Convert buffers to WAV data
-        guard !audioBuffers.isEmpty, let format = recordingFormat else {
+        guard !audioBuffers.isEmpty, recordingFormat != nil else {
             return nil
         }
         

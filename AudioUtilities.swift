@@ -4,7 +4,7 @@ import AVFoundation
 class AudioUtilities {
     
     static func createWAVData(from buffers: [AVAudioPCMBuffer], format: AVAudioFormat) -> Data? {
-        guard let firstBuffer = buffers.first else { return nil }
+        guard !buffers.isEmpty else { return nil }
         
         let frameCount = buffers.reduce(0) { $0 + Int($1.frameLength) }
         
