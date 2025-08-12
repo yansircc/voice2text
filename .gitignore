@@ -1,25 +1,96 @@
-# Environment variables
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+Icon
+._*
+.DocumentRevisions-V100
+.fseventsd
+.Spotlight-V100
+.TemporaryItems
+.Trashes
+.VolumeIcon.icns
+.com.apple.timemachine.donotpresent
+.AppleDB
+.AppleDesktop
+Network Trash Folder
+Temporary Items
+.apdisk
+
+# Xcode
+build/
+DerivedData/
+*.pbxuser
+!default.pbxuser
+*.mode1v3
+!default.mode1v3
+*.mode2v3
+!default.mode2v3
+*.perspectivev3
+!default.perspectivev3
+xcuserdata/
+*.xccheckout
+*.moved-aside
+*.xcuserstate
+*.xcscmblueprint
+*.xcscheme
+*.playground
+
+# Swift Package Manager
+.build/
+.swiftpm/
+Package.resolved
+
+# Environment files
 .env
 .env.local
 .env.*.local
+*.env
 
-# Build artifacts
-audio_recorder
-*.o
-*.swiftmodule
-*.swiftdoc
-*.d
+# Build outputs
 build/
+dist/
+*.app
+*.dSYM
 
-# macOS
-.DS_Store
-
-# IDE
+# Editor
+*.swp
+*.swo
+*~
 .vscode/
 .idea/
-*.xcodeproj/
-*.xcworkspace/
+*.sublime-*
+
+# Logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Dependencies
+node_modules/
+Pods/
+
+# Test coverage
+coverage/
+*.lcov
+.nyc_output
 
 # Temporary files
+tmp/
+temp/
 *.tmp
-temp_*.wav
+*.temp
+
+# Backup files
+*.bak
+*.backup
+*_backup
+*_old
+
+# Personal notes
+notes.md
+TODO.md
+.notes/
+
+# Reminder: .env file should not be committed to the repository
