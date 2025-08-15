@@ -41,7 +41,7 @@ if [ -d "/Applications/Voice2Text.app" ]; then
 fi
 
 # Copy to Applications
-cp -r "build/Voice2Text.app" "/Applications/"
+cp -r "../build/Voice2Text.app" "/Applications/"
 
 if [ $? -eq 0 ]; then
     echo "✅ Installation successful!"
